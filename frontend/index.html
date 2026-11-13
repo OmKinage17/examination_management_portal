@@ -1,0 +1,1837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Examination Management Portal V2</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #ffffff;
+            color: #212529;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+        }
+        .auth-container {
+            max-width: 440px;
+            margin: 40px auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Bootstrap Navbar -->
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+            <div class="container-fluid px-4">
+                <a class="navbar-brand" href="#" @click.prevent="resetView">EMP V2</a>
+                <div class="d-flex align-items-center">
+                    <template v-if="currentUser">
+                        <span class="navbar-text me-3 text-light">
+                            {{ currentUser.full_name }}
+                            <span class="badge bg-secondary ms-1">{{ currentUser.role.toUpperCase() }}</span>
+                        </span>
+                        <button class="btn btn-sm btn-outline-light" @click="handleLogout">Logout</button>
+                    </template>
+                    <template v-else>
+                        <button class="btn btn-sm btn-outline-light me-2" :class="{ 'active': currentView === 'login' }" @click="setView('login')">Login</button>
+                        <button class="btn btn-sm btn-light" :class="{ 'active': currentView === 'register' }" @click="setView('register')">Register as Student</button>
+                    </template>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="container-fluid px-4">
+            <!-- Global Feedback Alerts -->
+            <div v-if="errorMessage" class="alert alert-danger alert-dismissible fade show" role="alert">
+                {{ errorMessage }}
+                <button type="button" class="btn-close" @click="errorMessage = ''" aria-label="Close"></button>
+            </div>
+            <div v-if="successMessage" class="alert alert-success alert-dismissible fade show" role="alert">
+                {{ successMessage }}
+                <button type="button" class="btn-close" @click="successMessage = ''" aria-label="Close"></button>
+            </div>
+
+            <!-- ======================================================== -->
+            <!-- LOGGED OUT VIEWS: Login & Registration                   -->
+            <!-- ======================================================== -->
+            <section v-if="!currentUser && currentView === 'login'" class="auth-container">
+                <div class="card border">
+                    <div class="card-header bg-light">
+                        <h1 class="h5 mb-0">Portal Login</h1>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">Sign in with your credentials (Admin, Examiner, or Student).</p>
+                        <form @submit.prevent="handleLogin">
+                            <div class="mb-3">
+                                <label for="loginEmail" class="form-label">Email Address</label>
+                                <input type="email" id="loginEmail" class="form-control" v-model="loginForm.email" required placeholder="name@example.com">
+                            </div>
+                            <div class="mb-3">
+                                <label for="loginPassword" class="form-label">Password</label>
+                                <input type="password" id="loginPassword" class="form-control" v-model="loginForm.password" required placeholder="Enter password">
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100" :disabled="loading">
+                                <span v-if="loading">Signing in...</span>
+                                <span v-else>Sign In</span>
+                            </button>
+                        </form>
+                    </div>
+                    <div class="card-footer text-center bg-white border-top-0 pt-0">
+                        <small class="text-muted">
+                            New student? <a href="#" @click.prevent="setView('register')">Create a student account</a>
+                        </small>
+                    </div>
+                </div>
+            </section>
+
+            <section v-if="!currentUser && currentView === 'register'" class="auth-container">
+                <div class="card border">
+                    <div class="card-header bg-light">
+                        <h1 class="h5 mb-0">Student Registration</h1>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">Register as a student to book examination slots.</p>
+                        <form @submit.prevent="handleRegister">
+                            <div class="mb-3">
+                                <label for="regFullName" class="form-label">Full Name</label>
+                                <input type="text" id="regFullName" class="form-control" v-model="registerForm.full_name" required placeholder="Alice Lovelace">
+                            </div>
+                            <div class="mb-3">
+                                <label for="regEmail" class="form-label">Email Address</label>
+                                <input type="email" id="regEmail" class="form-control" v-model="registerForm.email" required placeholder="alice@example.com">
+                            </div>
+                            <div class="mb-3">
+                                <label for="regPassword" class="form-label">Password</label>
+                                <input type="password" id="regPassword" class="form-control" v-model="registerForm.password" required minlength="6" placeholder="Minimum 6 characters">
+                            </div>
+                            <button type="submit" class="btn btn-success w-100" :disabled="loading">
+                                <span v-if="loading">Registering...</span>
+                                <span v-else>Register as Student</span>
+                            </button>
+                        </form>
+                    </div>
+                    <div class="card-footer text-center bg-white border-top-0 pt-0">
+                        <small class="text-muted">
+                            Already registered? <a href="#" @click.prevent="setView('login')">Sign in here</a>
+                        </small>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ======================================================== -->
+            <!-- LOGGED IN VIEW: ADMIN DASHBOARD                          -->
+            <!-- ======================================================== -->
+            <section v-if="currentUser && currentUser.role === 'admin'">
+                <h1 class="h4 mb-3">Admin Dashboard</h1>
+                <!-- Admin Sub-Navigation Tabs -->
+                <ul class="nav nav-tabs mb-4">
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': adminTab === 'overview' }" @click="setAdminTab('overview')">Dashboard Overview</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': adminTab === 'courses' }" @click="setAdminTab('courses')">Courses</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': adminTab === 'examinations' }" @click="setAdminTab('examinations')">Examinations & Timelines</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': adminTab === 'examiners' }" @click="setAdminTab('examiners')">Examiners</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': adminTab === 'slots_bookings' }" @click="setAdminTab('slots_bookings')">Slots & Bookings</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': adminTab === 'reports' }" @click="setAdminTab('reports')">Reports & Stats</button>
+                    </li>
+                </ul>
+
+                <!-- TAB 1: OVERVIEW & STATS -->
+                <div v-if="adminTab === 'overview'">
+                    <div class="row g-3 mb-4" v-if="dashboardStats.stats">
+                        <div class="col-6 col-md-2">
+                            <div class="card text-center border p-2">
+                                <div class="text-muted small">Courses</div>
+                                <div class="h4 mb-0 text-primary">{{ dashboardStats.stats.total_courses }}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="card text-center border p-2">
+                                <div class="text-muted small">Examinations</div>
+                                <div class="h4 mb-0 text-success">{{ dashboardStats.stats.total_examinations }}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="card text-center border p-2">
+                                <div class="text-muted small">Students</div>
+                                <div class="h4 mb-0 text-info">{{ dashboardStats.stats.total_students }}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="card text-center border p-2">
+                                <div class="text-muted small">Examiners</div>
+                                <div class="h4 mb-0 text-warning">{{ dashboardStats.stats.total_examiners }}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="card text-center border p-2">
+                                <div class="text-muted small">Slots</div>
+                                <div class="h4 mb-0 text-secondary">{{ dashboardStats.stats.total_slots }}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <div class="card text-center border p-2">
+                                <div class="text-muted small">Bookings</div>
+                                <div class="h4 mb-0 text-dark">{{ dashboardStats.stats.total_bookings }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="card border">
+                                <div class="card-header bg-light fw-bold">Recent Examinations</div>
+                                <div class="card-body p-0">
+                                    <table class="table table-sm table-striped mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Exam Name</th>
+                                                <th>Course</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="e in dashboardStats.recent_examinations" :key="e.id">
+                                                <td>{{ e.exam_name }}</td>
+                                                <td>{{ e.course_code }}</td>
+                                                <td><span class="badge bg-secondary">{{ e.status }}</span></td>
+                                            </tr>
+                                            <tr v-if="!dashboardStats.recent_examinations || dashboardStats.recent_examinations.length === 0">
+                                                <td colspan="3" class="text-muted text-center py-2">No examinations created yet.</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="card border">
+                                <div class="card-header bg-light fw-bold">Recent Bookings</div>
+                                <div class="card-body p-0">
+                                    <table class="table table-sm table-striped mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Student</th>
+                                                <th>Examination</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="b in dashboardStats.recent_bookings" :key="b.id">
+                                                <td>{{ b.student_name }}</td>
+                                                <td>{{ b.exam_name }}</td>
+                                                <td><span class="badge bg-info text-dark">{{ b.status }}</span></td>
+                                            </tr>
+                                            <tr v-if="!dashboardStats.recent_bookings || dashboardStats.recent_bookings.length === 0">
+                                                <td colspan="3" class="text-muted text-center py-2">No student bookings recorded yet.</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 2: COURSES -->
+                <div v-if="adminTab === 'courses'">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h2 class="h5 mb-0">Course Management</h2>
+                        <button class="btn btn-sm btn-primary" @click="openCourseForm()">+ Add New Course</button>
+                    </div>
+                    <div v-if="showCourseForm" class="card border mb-3">
+                        <div class="card-header bg-light fw-bold">{{ editingCourseId ? 'Edit Course' : 'Add New Course' }}</div>
+                        <div class="card-body">
+                            <form @submit.prevent="saveCourse">
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Course Code</label>
+                                        <input type="text" class="form-control form-control-sm" v-model="courseForm.course_code" required placeholder="e.g. CS201">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small">Course Name</label>
+                                        <input type="text" class="form-control form-control-sm" v-model="courseForm.course_name" required placeholder="e.g. Modern Application Development II">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Status</label>
+                                        <select class="form-select form-select-sm" v-model="courseForm.status">
+                                            <option value="active">Active</option>
+                                            <option value="inactive">Inactive</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small">Description</label>
+                                    <textarea class="form-control form-control-sm" rows="2" v-model="courseForm.description" placeholder="Course syllabus overview..."></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-success me-2">Save Course</button>
+                                <button type="button" class="btn btn-sm btn-secondary" @click="showCourseForm = false">Cancel</button>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="card border">
+                        <div class="card-body p-0">
+                            <table class="table table-bordered table-striped table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Code</th>
+                                        <th>Course Name</th>
+                                        <th>Description</th>
+                                        <th>Status</th>
+                                        <th style="width: 150px;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="c in courses" :key="c.id">
+                                        <td class="fw-bold">{{ c.course_code }}</td>
+                                        <td>{{ c.course_name }}</td>
+                                        <td class="small">{{ c.description || '-' }}</td>
+                                        <td><span class="badge" :class="c.status === 'active' ? 'bg-success' : 'bg-secondary'">{{ c.status }}</span></td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary me-1" @click="openCourseForm(c)">Edit</button>
+                                            <button class="btn btn-sm btn-outline-danger" @click="deleteCourse(c.id)">Delete</button>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="courses.length === 0">
+                                        <td colspan="5" class="text-center text-muted py-3">No courses registered. Click "+ Add New Course" above.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 3: EXAMINATIONS & TIMELINES -->
+                <div v-if="adminTab === 'examinations'">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h2 class="h5 mb-0">Examinations & Timelines</h2>
+                        <button class="btn btn-sm btn-primary" @click="openExamForm()">+ Create Examination</button>
+                    </div>
+                    <div v-if="showExamForm" class="card border mb-3">
+                        <div class="card-header bg-light fw-bold">{{ editingExamId ? 'Edit Examination' : 'Create New Examination' }}</div>
+                        <div class="card-body">
+                            <form @submit.prevent="saveExam">
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-4">
+                                        <label class="form-label small">Course</label>
+                                        <select class="form-select form-select-sm" v-model="examForm.course_id" required :disabled="editingExamId">
+                                            <option value="" disabled>-- Select Course --</option>
+                                            <option v-for="c in courses" :key="c.id" :value="c.id">{{ c.course_code }} - {{ c.course_name }}</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label class="form-label small">Examination Name</label>
+                                        <input type="text" class="form-control form-control-sm" v-model="examForm.exam_name" required placeholder="e.g. End-Term Project Viva">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Status</label>
+                                        <select class="form-select form-select-sm" v-model="examForm.status">
+                                            <option value="Draft">Draft</option>
+                                            <option value="Slot Creation">Slot Creation</option>
+                                            <option value="Booking Open">Booking Open</option>
+                                            <option value="Closed">Closed</option>
+                                            <option value="Completed">Completed</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-6">
+                                        <label class="form-label small">Duration (Minutes)</label>
+                                        <input type="number" class="form-control form-control-sm" v-model="examForm.duration_minutes" required min="1">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small">Maximum Marks</label>
+                                        <input type="number" class="form-control form-control-sm" v-model="examForm.max_marks" required min="1" step="0.5">
+                                    </div>
+                                </div>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-bold">Slot Creation Window</label>
+                                        <div class="input-group input-group-sm mb-1">
+                                            <span class="input-group-text">Start</span>
+                                            <input type="datetime-local" class="form-control" v-model="examForm.slot_creation_start_date" required>
+                                        </div>
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text">End</span>
+                                            <input type="datetime-local" class="form-control" v-model="examForm.slot_creation_end_date" required>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-bold">Student Booking Window</label>
+                                        <div class="input-group input-group-sm mb-1">
+                                            <span class="input-group-text">Start</span>
+                                            <input type="datetime-local" class="form-control" v-model="examForm.slot_booking_start_date" required>
+                                        </div>
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text">End</span>
+                                            <input type="datetime-local" class="form-control" v-model="examForm.slot_booking_end_date" required>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small">Description / Instructions</label>
+                                    <textarea class="form-control form-control-sm" rows="2" v-model="examForm.description"></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-success me-2">Save Examination</button>
+                                <button type="button" class="btn btn-sm btn-secondary" @click="showExamForm = false">Cancel</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Selected Exam Details (Rubrics & Examiners) -->
+                    <div v-if="selectedExamForDetail" class="card border border-primary mb-3">
+                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                            <span>Manage Exam: <strong>{{ selectedExamForDetail.exam_name }}</strong> ({{ selectedExamForDetail.course_code }})</span>
+                            <button class="btn btn-sm btn-light" @click="selectedExamForDetail = null">Close Details</button>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6 border-end">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <h3 class="h6 mb-0 fw-bold">Evaluation Rubrics</h3>
+                                        <button class="btn btn-sm btn-outline-primary" @click="showRubricForm = !showRubricForm">+ Add Criterion</button>
+                                    </div>
+                                    <div v-if="showRubricForm" class="p-2 border rounded bg-light mb-2">
+                                        <form @submit.prevent="saveRubric">
+                                            <input type="text" class="form-control form-control-sm mb-1" v-model="rubricForm.criterion_name" placeholder="Criterion Name" required>
+                                            <input type="number" class="form-control form-control-sm mb-1" v-model="rubricForm.max_marks" placeholder="Max Marks" required min="1">
+                                            <input type="text" class="form-control form-control-sm mb-1" v-model="rubricForm.description" placeholder="Description...">
+                                            <button type="submit" class="btn btn-sm btn-success me-1">Save</button>
+                                            <button type="button" class="btn btn-sm btn-secondary" @click="showRubricForm = false">Cancel</button>
+                                        </form>
+                                    </div>
+                                    <table class="table table-sm table-bordered">
+                                        <thead class="table-light"><tr><th>Criterion</th><th>Max Marks</th><th>Action</th></tr></thead>
+                                        <tbody>
+                                            <tr v-for="r in selectedExamForDetail.rubrics" :key="r.id">
+                                                <td>{{ r.criterion_name }}</td>
+                                                <td>{{ r.max_marks }}</td>
+                                                <td><button class="btn btn-sm btn-link text-danger p-0" @click="deleteRubric(r.id)">Delete</button></td>
+                                            </tr>
+                                            <tr v-if="!selectedExamForDetail.rubrics || selectedExamForDetail.rubrics.length === 0"><td colspan="3" class="text-muted small text-center">No rubrics defined.</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="col-md-6">
+                                    <h3 class="h6 mb-2 fw-bold">Assigned Examiners</h3>
+                                    <form @submit.prevent="assignExaminerToSelectedExam" class="d-flex mb-2">
+                                        <select class="form-select form-select-sm me-2" v-model="assignExaminerId" required>
+                                            <option value="" disabled>-- Select Examiner --</option>
+                                            <option v-for="ex in examiners" :key="ex.id" :value="ex.id">{{ ex.full_name }} ({{ ex.email }})</option>
+                                        </select>
+                                        <button type="submit" class="btn btn-sm btn-primary text-nowrap">Assign</button>
+                                    </form>
+                                    <ul class="list-group list-group-flush border rounded">
+                                        <li v-for="a in selectedExamForDetail.assigned_examiners" :key="a.id" class="list-group-item d-flex justify-content-between align-items-center py-1">
+                                            <span>{{ a.examiner_name }} <small class="text-muted">({{ a.examiner_email }})</small></span>
+                                            <button class="btn btn-sm btn-link text-danger p-0" @click="unassignExaminer(a.examiner_id)">Unassign</button>
+                                        </li>
+                                        <li v-if="!selectedExamForDetail.assigned_examiners || selectedExamForDetail.assigned_examiners.length === 0" class="list-group-item text-muted small text-center">No examiners assigned.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card border">
+                        <div class="card-body p-0">
+                            <table class="table table-bordered table-striped table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Exam Name</th>
+                                        <th>Course</th>
+                                        <th>Duration</th>
+                                        <th>Max Marks</th>
+                                        <th>Status</th>
+                                        <th>Creation Window</th>
+                                        <th>Booking Window</th>
+                                        <th style="width: 220px;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="e in examinations" :key="e.id">
+                                        <td class="fw-bold">{{ e.exam_name }}</td>
+                                        <td>{{ e.course_code }}</td>
+                                        <td>{{ e.duration_minutes }}m</td>
+                                        <td>{{ e.max_marks }}</td>
+                                        <td>
+                                            <span class="badge" :class="{
+                                                'bg-secondary': e.status === 'Draft',
+                                                'bg-warning text-dark': e.status === 'Slot Creation',
+                                                'bg-success': e.status === 'Booking Open',
+                                                'bg-danger': e.status === 'Closed',
+                                                'bg-dark': e.status === 'Completed'
+                                            }">{{ e.status }}</span>
+                                        </td>
+                                        <td class="small">{{ formatDateTime(e.slot_creation_start_date) }}<br>to {{ formatDateTime(e.slot_creation_end_date) }}</td>
+                                        <td class="small">{{ formatDateTime(e.slot_booking_start_date) }}<br>to {{ formatDateTime(e.slot_booking_end_date) }}</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-info text-dark me-1" @click="loadExamDetails(e.id)">Staff & Rubrics</button>
+                                            <button class="btn btn-sm btn-outline-primary me-1" @click="openExamForm(e)">Edit</button>
+                                            <button class="btn btn-sm btn-outline-danger" @click="deleteExam(e.id)">Delete</button>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="examinations.length === 0">
+                                        <td colspan="8" class="text-center text-muted py-3">No examinations found. Click "+ Create Examination" above.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 4: EXAMINERS -->
+                <div v-if="adminTab === 'examiners'">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h2 class="h5 mb-0">Examiner Management</h2>
+                        <button class="btn btn-sm btn-primary" @click="showExaminerForm = !showExaminerForm">+ Create Examiner Account</button>
+                    </div>
+                    <div v-if="showExaminerForm" class="card border mb-3">
+                        <div class="card-header bg-light fw-bold">Register New Examiner</div>
+                        <div class="card-body">
+                            <form @submit.prevent="createExaminer">
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-4">
+                                        <label class="form-label small">Full Name</label>
+                                        <input type="text" class="form-control form-control-sm" v-model="examinerForm.full_name" required placeholder="Dr. Jane Doe">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label small">Email Address</label>
+                                        <input type="email" class="form-control form-control-sm" v-model="examinerForm.email" required placeholder="jane@college.edu">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label small">Initial Password</label>
+                                        <input type="password" class="form-control form-control-sm" v-model="examinerForm.password" required minlength="6">
+                                    </div>
+                                </div>
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-6">
+                                        <label class="form-label small">Department</label>
+                                        <input type="text" class="form-control form-control-sm" v-model="examinerForm.department" placeholder="Computer Science">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small">Contact Details</label>
+                                        <input type="text" class="form-control form-control-sm" v-model="examinerForm.contact_details" placeholder="+91 9876543210">
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-success me-2">Create Examiner</button>
+                                <button type="button" class="btn btn-sm btn-secondary" @click="showExaminerForm = false">Cancel</button>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="card border">
+                        <div class="card-body p-0">
+                            <table class="table table-bordered table-striped table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Department</th>
+                                        <th>Contact</th>
+                                        <th>Assigned Examinations</th>
+                                        <th>Slots Created</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="ex in examiners" :key="ex.id">
+                                        <td class="fw-bold">{{ ex.full_name }}</td>
+                                        <td>{{ ex.email }}</td>
+                                        <td>{{ ex.examiner_profile ? ex.examiner_profile.department : '-' }}</td>
+                                        <td>{{ ex.examiner_profile ? ex.examiner_profile.contact_details : '-' }}</td>
+                                        <td>
+                                            <span v-for="en in ex.assigned_exams" :key="en" class="badge bg-secondary me-1">{{ en }}</span>
+                                            <span v-if="!ex.assigned_exams || ex.assigned_exams.length === 0" class="text-muted small">None</span>
+                                        </td>
+                                        <td>{{ ex.slots_count }}</td>
+                                    </tr>
+                                    <tr v-if="examiners.length === 0">
+                                        <td colspan="6" class="text-center text-muted py-3">No examiners registered.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 5: SLOTS & BOOKINGS -->
+                <div v-if="adminTab === 'slots_bookings'">
+                    <h2 class="h5 mb-3">Slots & Bookings Oversight</h2>
+                    <div class="card border mb-4">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <span class="fw-bold">All Examination Slots</span>
+                            <button class="btn btn-sm btn-outline-secondary" @click="fetchSlots">Refresh</button>
+                        </div>
+                        <div class="card-body p-0">
+                            <table class="table table-bordered table-striped table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Exam</th><th>Date & Time</th><th>Examiner</th><th>Capacity</th><th>Available</th><th>Status</th><th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="s in allSlots" :key="s.id">
+                                        <td>{{ s.exam_name }}</td>
+                                        <td>{{ s.exam_date }} ({{ s.start_time }} - {{ s.end_time }})</td>
+                                        <td>{{ s.examiner_name }}</td>
+                                        <td>{{ s.max_capacity }}</td>
+                                        <td>{{ s.available_seats }}</td>
+                                        <td><span class="badge" :class="s.status === 'Available' ? 'bg-success' : 'bg-secondary'">{{ s.status }}</span></td>
+                                        <td><button class="btn btn-sm btn-outline-primary" @click="openReassignModal(s)">Reassign Examiner</button></td>
+                                    </tr>
+                                    <tr v-if="allSlots.length === 0"><td colspan="7" class="text-center text-muted py-3">No examination slots created yet.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="card border">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <span class="fw-bold">All Student Bookings</span>
+                            <button class="btn btn-sm btn-outline-secondary" @click="fetchBookings">Refresh</button>
+                        </div>
+                        <div class="card-body p-0">
+                            <table class="table table-bordered table-striped table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>ID</th><th>Student</th><th>Examination</th><th>Slot Date/Time</th><th>Status</th><th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="b in allBookings" :key="b.id">
+                                        <td>#{{ b.id }}</td>
+                                        <td>{{ b.student_name }} <small class="text-muted">({{ b.student_email }})</small></td>
+                                        <td>{{ b.exam_name }}</td>
+                                        <td>{{ b.slot ? b.slot.exam_date + ' (' + b.slot.start_time + '-' + b.slot.end_time + ')' : '-' }}</td>
+                                        <td><span class="badge bg-info text-dark">{{ b.status }}</span></td>
+                                        <td>
+                                            <button v-if="b.status === 'Booked'" class="btn btn-sm btn-warning text-dark" @click="openRescheduleModal(b)">Reschedule</button>
+                                            <span v-else class="text-muted small">No action</span>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="allBookings.length === 0"><td colspan="6" class="text-center text-muted py-3">No student bookings found.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Reschedule Modal -->
+                    <div v-if="reschedulingBooking" class="card border border-warning mt-3">
+                        <div class="card-header bg-warning text-dark fw-bold">Reschedule Booking #{{ reschedulingBooking.id }} for {{ reschedulingBooking.student_name }}</div>
+                        <div class="card-body">
+                            <div class="d-flex align-items-center">
+                                <select class="form-select form-select-sm me-2" v-model="targetRescheduleSlotId">
+                                    <option value="" disabled>-- Select New Available Slot --</option>
+                                    <option v-for="s in candidateSlots" :key="s.id" :value="s.id">Slot #{{ s.id }} | {{ s.exam_date }} ({{ s.start_time }}-{{ s.end_time }}) | Seats Open: {{ s.available_seats }}</option>
+                                </select>
+                                <button class="btn btn-sm btn-success me-2 text-nowrap" @click="executeReschedule">Confirm</button>
+                                <button class="btn btn-sm btn-secondary text-nowrap" @click="reschedulingBooking = null">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 6: REPORTS -->
+                <div v-if="adminTab === 'reports'">
+                    <h2 class="h5 mb-3">Historical Reports & Analytics</h2>
+                    <div class="row g-3 mb-4" v-if="historicalReports.historical_stats">
+                        <div class="col-md-3"><div class="card p-3 border"><div class="text-muted small">Exams Conducted</div><div class="h3 mb-0 text-success">{{ historicalReports.historical_stats.examinations_conducted }}</div></div></div>
+                        <div class="col-md-3"><div class="card p-3 border"><div class="text-muted small">Students Evaluated</div><div class="h3 mb-0 text-primary">{{ historicalReports.historical_stats.students_evaluated }}</div></div></div>
+                        <div class="col-md-3"><div class="card p-3 border"><div class="text-muted small">Completed Bookings</div><div class="h3 mb-0 text-info">{{ historicalReports.historical_stats.completed_bookings }}</div></div></div>
+                        <div class="col-md-3"><div class="card p-3 border"><div class="text-muted small">Pending Evaluations</div><div class="h3 mb-0 text-danger">{{ historicalReports.historical_stats.pending_evaluations }}</div></div></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ======================================================== -->
+            <!-- LOGGED IN VIEW: EXAMINER PORTAL                          -->
+            <!-- ======================================================== -->
+            <section v-if="currentUser && currentUser.role === 'examiner'">
+                <h1 class="h4 mb-3">Examiner Dashboard</h1>
+                <ul class="nav nav-tabs mb-4">
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': examinerTab === 'dashboard' }" @click="setExaminerTab('dashboard')">Dashboard</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': examinerTab === 'assigned_exams' }" @click="setExaminerTab('assigned_exams')">Assigned Examinations</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': examinerTab === 'my_slots' }" @click="setExaminerTab('my_slots')">My Slots</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': examinerTab === 'booked_students' }" @click="setExaminerTab('booked_students')">Booked Students & Evaluations</button>
+                    </li>
+                </ul>
+
+                <!-- EXAMINER TAB 1: DASHBOARD -->
+                <div v-if="examinerTab === 'dashboard'">
+                    <div class="row g-3 mb-4" v-if="examinerStats.stats">
+                        <div class="col-md-3">
+                            <div class="card p-3 border text-center">
+                                <div class="text-muted small">Assigned Examinations</div>
+                                <div class="h3 mb-0 text-primary">{{ examinerStats.stats.assigned_examinations }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card p-3 border text-center">
+                                <div class="text-muted small">My Slots Created</div>
+                                <div class="h3 mb-0 text-secondary">{{ examinerStats.stats.total_slots }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card p-3 border text-center">
+                                <div class="text-muted small">Total Booked Students</div>
+                                <div class="h3 mb-0 text-info">{{ examinerStats.stats.booked_students }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card p-3 border text-center">
+                                <div class="text-muted small">Pending Evaluations</div>
+                                <div class="h3 mb-0 text-danger">{{ examinerStats.stats.pending_evaluations }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- EXAMINER TAB 2: ASSIGNED EXAMINATIONS -->
+                <div v-if="examinerTab === 'assigned_exams'">
+                    <h2 class="h5 mb-3">My Assigned Examinations</h2>
+                    <div class="card border">
+                        <div class="card-body p-0">
+                            <table class="table table-bordered table-striped mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Exam Name</th>
+                                        <th>Course</th>
+                                        <th>Duration</th>
+                                        <th>Max Marks</th>
+                                        <th>Slot Creation Window</th>
+                                        <th>Creation Status</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="e in examinerExams" :key="e.id">
+                                        <td class="fw-bold">{{ e.exam_name }}</td>
+                                        <td>{{ e.course_code }}</td>
+                                        <td>{{ e.duration_minutes }}m</td>
+                                        <td>{{ e.max_marks }}</td>
+                                        <td class="small">{{ formatDateTime(e.slot_creation_start_date) }}<br>to {{ formatDateTime(e.slot_creation_end_date) }}</td>
+                                        <td>
+                                            <span class="badge" :class="e.is_slot_creation_open ? 'bg-success' : 'bg-secondary'">
+                                                {{ e.is_slot_creation_open ? 'Open' : 'Closed' }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <button v-if="e.is_slot_creation_open" class="btn btn-sm btn-primary" @click="startSlotCreationForExam(e)">+ Create Slot</button>
+                                            <span v-else class="text-muted small">Creation Closed</span>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="examinerExams.length === 0">
+                                        <td colspan="7" class="text-center text-muted py-3">No examinations assigned to you.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- EXAMINER TAB 3: MY SLOTS -->
+                <div v-if="examinerTab === 'my_slots'">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h2 class="h5 mb-0">My Examination Slots</h2>
+                        <button class="btn btn-sm btn-primary" @click="showSlotForm = !showSlotForm">+ Create Slot</button>
+                    </div>
+
+                    <!-- Create Slot Form -->
+                    <div v-if="showSlotForm" class="card border mb-3">
+                        <div class="card-header bg-light fw-bold">Create Examination Slot</div>
+                        <div class="card-body">
+                            <form @submit.prevent="saveSlot">
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-4">
+                                        <label class="form-label small">Assigned Examination</label>
+                                        <select class="form-select form-select-sm" v-model="slotForm.exam_id" required>
+                                            <option value="" disabled>-- Select Exam --</option>
+                                            <option v-for="e in examinerExams" :key="e.id" :value="e.id" :disabled="!e.is_slot_creation_open">
+                                                {{ e.exam_name }} ({{ e.course_code }}) {{ !e.is_slot_creation_open ? '[Closed]' : '' }}
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Date</label>
+                                        <input type="date" class="form-control form-control-sm" v-model="slotForm.exam_date" required>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Start Time</label>
+                                        <input type="time" class="form-control form-control-sm" v-model="slotForm.start_time" required>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">End Time</label>
+                                        <input type="time" class="form-control form-control-sm" v-model="slotForm.end_time" required>
+                                    </div>
+                                    <div class="col-md-1">
+                                        <label class="form-label small">Seats</label>
+                                        <input type="number" class="form-control form-control-sm" v-model="slotForm.max_capacity" required min="1">
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-success me-2">Save Slot</button>
+                                <button type="button" class="btn btn-sm btn-secondary" @click="showSlotForm = false">Cancel</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Slots Table -->
+                    <div class="card border">
+                        <div class="card-body p-0">
+                            <table class="table table-bordered table-striped table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Exam</th>
+                                        <th>Date</th>
+                                        <th>Time</th>
+                                        <th>Capacity</th>
+                                        <th>Available</th>
+                                        <th>Status</th>
+                                        <th style="width: 220px;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="s in examinerSlots" :key="s.id">
+                                        <td class="fw-bold">{{ s.exam_name }}</td>
+                                        <td>{{ s.exam_date }}</td>
+                                        <td>{{ s.start_time }} - {{ s.end_time }}</td>
+                                        <td>{{ s.max_capacity }}</td>
+                                        <td>{{ s.available_seats }}</td>
+                                        <td>
+                                            <span class="badge" :class="{
+                                                'bg-success': s.status === 'Available',
+                                                'bg-warning text-dark': s.status === 'Full',
+                                                'bg-dark': s.status === 'Completed',
+                                                'bg-secondary': s.status === 'Cancelled'
+                                            }">{{ s.status }}</span>
+                                        </td>
+                                        <td>
+                                            <button v-if="s.can_edit_or_delete" class="btn btn-sm btn-outline-danger me-1" @click="deleteExaminerSlot(s.id)">Delete</button>
+                                            <button v-if="s.status !== 'Completed'" class="btn btn-sm btn-outline-dark" @click="markSlotCompleted(s.id)">Mark Completed</button>
+                                            <span v-else class="text-success small fw-bold">Completed</span>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="examinerSlots.length === 0">
+                                        <td colspan="7" class="text-center text-muted py-3">No slots created yet. Click "+ Create Slot" above.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- EXAMINER TAB 4: BOOKED STUDENTS & EVALUATION -->
+                <div v-if="examinerTab === 'booked_students'">
+                    <h2 class="h5 mb-3">Booked Students for My Slots</h2>
+
+                    <!-- Evaluation Form Box -->
+                    <div v-if="evaluatingBooking" class="card border border-success mb-4">
+                        <div class="card-header bg-success text-white fw-bold d-flex justify-content-between align-items-center">
+                            <span>Evaluate Student: {{ evaluatingBooking.student_name }} ({{ evaluatingBooking.exam_name }})</span>
+                            <button class="btn btn-sm btn-light" @click="evaluatingBooking = null">Close Evaluation</button>
+                        </div>
+                        <div class="card-body">
+                            <form @submit.prevent="submitStudentEvaluation">
+                                <table class="table table-sm table-bordered mb-3">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Criterion</th>
+                                            <th>Description</th>
+                                            <th>Max Marks</th>
+                                            <th style="width: 160px;">Marks Awarded</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="r in evaluationRubrics" :key="r.id">
+                                            <td class="fw-bold">{{ r.criterion_name }}</td>
+                                            <td class="small">{{ r.description || '-' }}</td>
+                                            <td>{{ r.max_marks }}</td>
+                                            <td>
+                                                <input type="number" class="form-control form-control-sm" v-model.number="rubricScoreInputs[r.id]" min="0" :max="r.max_marks" step="0.5" required>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                    <tfoot>
+                                        <tr class="table-light fw-bold">
+                                            <td colspan="3" class="text-end">Total Marks:</td>
+                                            <td>{{ calculatedTotalScore }} / {{ evaluatingBookingExamMax }}</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                                <div class="mb-3">
+                                    <label class="form-label small fw-bold">Examiner Remarks & Feedback</label>
+                                    <textarea class="form-control form-control-sm" rows="3" v-model="evaluationRemarks" placeholder="Enter academic feedback, performance remarks..."></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-success me-2">Save Evaluation</button>
+                                <button type="button" class="btn btn-sm btn-secondary" @click="evaluatingBooking = null">Cancel</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Booked Students Table -->
+                    <div class="card border">
+                        <div class="card-body p-0">
+                            <table class="table table-bordered table-striped table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Student Name</th>
+                                        <th>Email</th>
+                                        <th>Examination</th>
+                                        <th>Slot Date & Time</th>
+                                        <th>Status</th>
+                                        <th>Marks</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="b in bookedStudents" :key="b.booking_id">
+                                        <td class="fw-bold">{{ b.student_name }}</td>
+                                        <td>{{ b.student_email }}</td>
+                                        <td>{{ b.exam_name }} <small class="text-muted">({{ b.course_code }})</small></td>
+                                        <td>{{ b.exam_date }} ({{ b.slot_time }})</td>
+                                        <td><span class="badge" :class="b.is_evaluated ? 'bg-success' : 'bg-warning text-dark'">{{ b.is_evaluated ? 'Evaluated' : 'Pending' }}</span></td>
+                                        <td>
+                                            <span v-if="b.is_evaluated" class="fw-bold text-success">{{ b.evaluation.total_marks }}</span>
+                                            <span v-else class="text-muted">-</span>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm" :class="b.is_evaluated ? 'btn-outline-primary' : 'btn-primary'" @click="openEvaluationForm(b)">
+                                                {{ b.is_evaluated ? 'Edit Marks' : 'Evaluate Student' }}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="bookedStudents.length === 0">
+                                        <td colspan="7" class="text-center text-muted py-3">No students currently booked in your slots.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ======================================================== -->
+            <!-- LOGGED IN VIEW: STUDENT PORTAL                           -->
+            <!-- ======================================================== -->
+            <section v-if="currentUser && currentUser.role === 'student'" class="mt-4">
+                <h1 class="h4 mb-3">Student Dashboard</h1>
+                <ul class="nav nav-tabs mb-4">
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': studentTab === 'dashboard' }" @click="setStudentTab('dashboard')">Dashboard</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': studentTab === 'examinations' }" @click="setStudentTab('examinations')">Available Examinations</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': studentTab === 'bookings' }" @click="setStudentTab('bookings')">My Bookings</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': studentTab === 'results' }" @click="setStudentTab('results')">Results</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" :class="{ 'active fw-bold': studentTab === 'profile' }" @click="setStudentTab('profile')">Profile</button>
+                    </li>
+                </ul>
+
+                <div v-if="studentTab === 'dashboard'">
+                    <div class="row g-3 mb-4" v-if="studentDashboard.stats">
+                        <div class="col-6 col-md-3">
+                            <div class="card border p-3 text-center">
+                                <div class="text-muted small">Available Examinations</div>
+                                <div class="h3 mb-0 text-primary">{{ studentDashboard.stats.available_examinations }}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="card border p-3 text-center">
+                                <div class="text-muted small">Upcoming Bookings</div>
+                                <div class="h3 mb-0 text-info">{{ studentDashboard.stats.upcoming_examinations }}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="card border p-3 text-center">
+                                <div class="text-muted small">Completed Examinations</div>
+                                <div class="h3 mb-0 text-success">{{ studentDashboard.stats.completed_examinations }}</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="card border p-3 text-center">
+                                <div class="text-muted small">Results Available</div>
+                                <div class="h3 mb-0 text-secondary">{{ studentDashboard.stats.published_results }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card border">
+                        <div class="card-header bg-light fw-bold">Upcoming Bookings</div>
+                        <div class="card-body p-0">
+                            <table class="table table-striped mb-0">
+                                <thead>
+                                    <tr><th>Examination</th><th>Date</th><th>Time</th><th>Examiner</th><th>Status</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="b in studentDashboard.upcoming_bookings" :key="b.id">
+                                        <td>{{ b.exam_name }}</td>
+                                        <td>{{ b.slot ? b.slot.exam_date : '-' }}</td>
+                                        <td>{{ b.slot ? b.slot.start_time + ' - ' + b.slot.end_time : '-' }}</td>
+                                        <td>{{ b.slot ? b.slot.examiner_name : '-' }}</td>
+                                        <td>{{ b.status }}</td>
+                                    </tr>
+                                    <tr v-if="!studentDashboard.upcoming_bookings || studentDashboard.upcoming_bookings.length === 0">
+                                        <td colspan="5" class="text-center text-muted py-3">No upcoming bookings.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="studentTab === 'examinations'">
+                    <form class="row g-2 mb-3" @submit.prevent="searchStudentExaminations">
+                        <div class="col-md-8">
+                            <label for="studentExamSearch" class="form-label">Search examinations or courses</label>
+                            <input id="studentExamSearch" class="form-control" v-model="studentExamSearch" placeholder="Examination name, course code, or course name">
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary me-2">Search</button>
+                            <button type="button" class="btn btn-outline-secondary" @click="studentExamSearch = ''; searchStudentExaminations()">Clear</button>
+                        </div>
+                    </form>
+                    <div class="card border mb-3">
+                        <div class="card-header bg-light fw-bold">Examinations</div>
+                        <div class="card-body p-0">
+                            <table class="table table-bordered table-striped mb-0">
+                                <thead>
+                                    <tr><th>Examination</th><th>Course</th><th>Date Window</th><th>Status</th><th>Seats</th><th>Action</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="exam in studentExaminations" :key="exam.id">
+                                        <td>{{ exam.exam_name }}<div class="small text-muted">{{ exam.description }}</div></td>
+                                        <td>{{ exam.course_code }} - {{ exam.course_name }}</td>
+                                        <td class="small">{{ formatDateTime(exam.slot_booking_start_date) }} to {{ formatDateTime(exam.slot_booking_end_date) }}</td>
+                                        <td>{{ exam.status }}</td>
+                                        <td>{{ exam.total_available_seats }}</td>
+                                        <td><button class="btn btn-sm btn-outline-primary" @click="showStudentSlots(exam)">View Slots</button></td>
+                                    </tr>
+                                    <tr v-if="studentExaminations.length === 0">
+                                        <td colspan="6" class="text-center text-muted py-3">No examinations found.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div v-if="studentSlotDetails" class="card border">
+                        <div class="card-header bg-light fw-bold">Available Slots: {{ studentSlotDetails.examination.exam_name }}</div>
+                        <div class="card-body">
+                            <p class="small">
+                                {{ studentSlotDetails.examination.course_code }} - {{ studentSlotDetails.examination.course_name }}
+                                | {{ studentSlotDetails.examination.duration_minutes }} minutes
+                                | {{ studentSlotDetails.examination.max_marks }} marks
+                            </p>
+                            <p v-if="!studentSlotDetails.is_booking_open" class="alert alert-warning py-2">
+                                Booking is closed. Slots can only be booked during the configured booking dates while the examination status is Booking Open.
+                            </p>
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-striped mb-0">
+                                    <thead>
+                                        <tr><th>Date</th><th>Start</th><th>End</th><th>Examiner</th><th>Available Seats</th><th>Action</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="slot in studentSlotDetails.slots" :key="slot.id">
+                                            <td>{{ slot.exam_date }}</td>
+                                            <td>{{ slot.start_time }}</td>
+                                            <td>{{ slot.end_time }}</td>
+                                            <td>{{ slot.examiner_name }}</td>
+                                            <td>{{ slot.available_seats }}</td>
+                                            <td>
+                                                <button class="btn btn-sm btn-success" :disabled="!slot.is_open_for_booking || studentSlotDetails.student_booking_status === 'Booked' || studentSlotDetails.student_booking_status === 'Completed'" @click="bookStudentSlot(slot)">
+                                                    Book Slot
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        <tr v-if="studentSlotDetails.slots.length === 0">
+                                            <td colspan="6" class="text-center text-muted py-3">No slots are available.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="studentTab === 'bookings'" class="card border">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <span class="fw-bold">My Bookings</span>
+                        <button class="btn btn-sm btn-outline-primary" :disabled="exportLoading" @click="startCsvExport">
+                            <span v-if="exportLoading">Exporting...</span>
+                            <span v-else>Export History</span>
+                        </button>
+                    </div>
+                    <!-- Asynchronous CSV Export Status Banner -->
+                    <div v-if="exportStatus" class="p-3 bg-light border-bottom">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                            <div>
+                                <strong>Export Status:</strong>
+                                <span v-if="exportStatus === 'started'" class="badge bg-secondary ms-2">Export started</span>
+                                <span v-else-if="exportStatus === 'processing'" class="badge bg-info ms-2">Export processing</span>
+                                <span v-else-if="exportStatus === 'completed'" class="badge bg-success ms-2">Export completed</span>
+                                <span v-else-if="exportStatus === 'failed'" class="badge bg-danger ms-2">Export failed</span>
+                                <span v-if="exportError" class="text-danger small ms-2">{{ exportError }}</span>
+                            </div>
+                            <div v-if="exportStatus === 'completed' && exportTaskId">
+                                <a :href="'/api/student/export/download/' + exportTaskId" class="btn btn-sm btn-success" download>Download CSV</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-striped mb-0">
+                                <thead>
+                                    <tr><th>Examination</th><th>Course</th><th>Date & Time</th><th>Examiner</th><th>Booking Status</th><th>Evaluation</th><th>Action</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="booking in studentBookings" :key="booking.id">
+                                        <td>{{ booking.exam_name }}</td>
+                                        <td>{{ booking.course_name }}</td>
+                                        <td>{{ booking.slot ? booking.slot.exam_date + ' ' + booking.slot.start_time + ' - ' + booking.slot.end_time : '-' }}</td>
+                                        <td>{{ booking.slot ? booking.slot.examiner_name : '-' }}</td>
+                                        <td>{{ booking.status }}</td>
+                                        <td>{{ booking.is_evaluated ? 'Evaluated' : 'Pending' }}</td>
+                                        <td>
+                                            <button v-if="booking.can_cancel" class="btn btn-sm btn-outline-danger" @click="cancelStudentBooking(booking)">Cancel</button>
+                                            <span v-else class="text-muted small">Not available</span>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="studentBookings.length === 0">
+                                        <td colspan="7" class="text-center text-muted py-3">No bookings found.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="studentTab === 'results'" class="card border">
+                    <div class="card-header bg-light fw-bold">My Results</div>
+                    <div class="card-body">
+                        <div v-for="result in studentResults" :key="result.evaluation_id" class="border rounded p-3 mb-3">
+                            <h2 class="h6">{{ result.exam_name }} ({{ result.course_code }} - {{ result.course_name }})</h2>
+                            <p class="mb-2"><strong>Total:</strong> {{ result.total_marks }} / {{ result.max_marks }} ({{ result.percentage }}%)</p>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered">
+                                    <thead><tr><th>Criterion</th><th>Marks</th><th>Maximum</th></tr></thead>
+                                    <tbody>
+                                        <tr v-for="score in result.rubric_scores" :key="score.id">
+                                            <td>{{ score.criterion_name }}</td><td>{{ score.marks_obtained }}</td><td>{{ score.max_marks }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p class="mb-0"><strong>Examiner remarks:</strong> {{ result.remarks || 'No remarks.' }}</p>
+                        </div>
+                        <p v-if="studentResults.length === 0" class="text-muted mb-0">No evaluated results are available.</p>
+                    </div>
+                </div>
+
+                <div v-if="studentTab === 'profile'" class="card border" style="max-width: 600px;">
+                    <div class="card-header bg-light fw-bold">My Profile</div>
+                    <div class="card-body">
+                        <form @submit.prevent="saveStudentProfile">
+                            <div class="mb-3">
+                                <label for="studentProfileName" class="form-label">Full Name</label>
+                                <input id="studentProfileName" class="form-control" v-model="studentProfile.full_name" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Email</label>
+                                <input class="form-control" :value="studentProfile.email" disabled>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Save Profile</button>
+                        </form>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Vue.js 3 via CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <!-- Bootstrap 5 Bundle JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        const { createApp, ref, computed, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const currentView = ref('login');
+                const currentUser = ref(null);
+                const csrfToken = ref('');
+                const loading = ref(false);
+                const errorMessage = ref('');
+                const successMessage = ref('');
+
+                // Auth states
+                const loginForm = ref({ email: '', password: '' });
+                const registerForm = ref({ full_name: '', email: '', password: '' });
+
+                // Admin states
+                const adminTab = ref('overview');
+                const dashboardStats = ref({});
+                const courses = ref([]);
+                const examinations = ref([]);
+                const examiners = ref([]);
+                const allSlots = ref([]);
+                const allBookings = ref([]);
+                const historicalReports = ref({});
+                const showCourseForm = ref(false);
+                const editingCourseId = ref(null);
+                const courseForm = ref({ course_code: '', course_name: '', description: '', status: 'active' });
+                const showExamForm = ref(false);
+                const editingExamId = ref(null);
+                const examForm = ref({ course_id: '', exam_name: '', description: '', duration_minutes: 45, max_marks: 100, slot_creation_start_date: '', slot_creation_end_date: '', slot_booking_start_date: '', slot_booking_end_date: '', status: 'Draft' });
+                const selectedExamForDetail = ref(null);
+                const showRubricForm = ref(false);
+                const rubricForm = ref({ criterion_name: '', max_marks: 20, description: '' });
+                const assignExaminerId = ref('');
+                const showExaminerForm = ref(false);
+                const examinerForm = ref({ full_name: '', email: '', password: '', department: '', contact_details: '' });
+                const reschedulingBooking = ref(null);
+                const candidateSlots = ref([]);
+                const targetRescheduleSlotId = ref('');
+
+                // Examiner states
+                const examinerTab = ref('dashboard');
+                const examinerStats = ref({});
+                const examinerExams = ref([]);
+                const examinerSlots = ref([]);
+                const bookedStudents = ref([]);
+                const showSlotForm = ref(false);
+                const slotForm = ref({ exam_id: '', exam_date: '', start_time: '', end_time: '', max_capacity: 5 });
+                const evaluatingBooking = ref(null);
+                const evaluationRubrics = ref([]);
+                const rubricScoreInputs = ref({});
+                const evaluationRemarks = ref('');
+                const evaluatingBookingExamMax = ref(100);
+
+                // Student states
+                const studentTab = ref('dashboard');
+                const studentDashboard = ref({});
+                const studentExamSearch = ref('');
+                const studentExaminations = ref([]);
+                const studentSlotDetails = ref(null);
+                const studentBookings = ref([]);
+                const studentResults = ref([]);
+                const studentProfile = ref({ full_name: '', email: '' });
+                const exportLoading = ref(false);
+                const exportStatus = ref('');
+                const exportTaskId = ref('');
+                const exportError = ref('');
+
+                const setView = (v) => { currentView.value = v; errorMessage.value = ''; successMessage.value = ''; };
+                const resetView = () => { errorMessage.value = ''; successMessage.value = ''; };
+
+                const formatDateTime = (isoStr) => {
+                    if (!isoStr) return '-';
+                    return isoStr.replace('T', ' ').substring(0, 16);
+                };
+
+                const calculatedTotalScore = computed(() => {
+                    let total = 0;
+                    for (const rid in rubricScoreInputs.value) {
+                        const val = parseFloat(rubricScoreInputs.value[rid]) || 0;
+                        total += val;
+                    }
+                    return total;
+                });
+
+                // API Helper
+                const apiFetch = async (url, options = {}) => {
+                    options.credentials = 'include';
+                    options.headers = options.headers || {};
+                    if (options.method && options.method !== 'GET') {
+                        options.headers['Content-Type'] = 'application/json';
+                        options.headers['X-CSRF-Token'] = csrfToken.value;
+                    }
+                    const res = await fetch(url, options);
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        throw new Error(data.error || 'Server error (' + res.status + ')');
+                    }
+                    return data;
+                };
+
+                // Check active session
+                const checkSession = async () => {
+                    try {
+                        const data = await apiFetch('/api/auth/me');
+                        if (data.authenticated && data.user) {
+                            currentUser.value = data.user;
+                            csrfToken.value = data.csrf_token || '';
+                            if (currentUser.value.role === 'admin') setAdminTab('overview');
+                            if (currentUser.value.role === 'examiner') setExaminerTab('dashboard');
+                            if (currentUser.value.role === 'student') setStudentTab('dashboard');
+                        }
+                    } catch (e) {}
+                };
+
+                // Auth handlers
+                const handleLogin = async () => {
+                    loading.value = true;
+                    errorMessage.value = '';
+                    try {
+                        const data = await apiFetch('/api/auth/login', {
+                            method: 'POST',
+                            body: JSON.stringify(loginForm.value)
+                        });
+                        currentUser.value = data.user;
+                        csrfToken.value = data.csrf_token || '';
+                        loginForm.value = { email: '', password: '' };
+                        successMessage.value = 'Signed in as ' + data.user.full_name;
+                        if (currentUser.value.role === 'admin') setAdminTab('overview');
+                        if (currentUser.value.role === 'examiner') setExaminerTab('dashboard');
+                        if (currentUser.value.role === 'student') setStudentTab('dashboard');
+                    } catch (err) {
+                        errorMessage.value = err.message;
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const handleRegister = async () => {
+                    loading.value = true;
+                    errorMessage.value = '';
+                    try {
+                        await apiFetch('/api/auth/register', {
+                            method: 'POST',
+                            body: JSON.stringify(registerForm.value)
+                        });
+                        successMessage.value = 'Student registration successful! Please log in.';
+                        registerForm.value = { full_name: '', email: '', password: '' };
+                        currentView.value = 'login';
+                    } catch (err) {
+                        errorMessage.value = err.message;
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const handleLogout = async () => {
+                    try {
+                        await apiFetch('/api/auth/logout', { method: 'POST' });
+                        currentUser.value = null;
+                        csrfToken.value = '';
+                        currentView.value = 'login';
+                        successMessage.value = 'Logged out successfully.';
+                    } catch (err) {
+                        errorMessage.value = err.message;
+                    }
+                };
+
+                // Admin tab switcher
+                const setAdminTab = (tab) => {
+                    adminTab.value = tab;
+                    errorMessage.value = '';
+                    successMessage.value = '';
+                    if (tab === 'overview') fetchDashboardStats();
+                    if (tab === 'courses') fetchCourses();
+                    if (tab === 'examinations') { fetchCourses(); fetchExaminations(); fetchExaminers(); }
+                    if (tab === 'examiners') fetchExaminers();
+                    if (tab === 'slots_bookings') { fetchSlots(); fetchBookings(); }
+                    if (tab === 'reports') fetchHistoricalReports();
+                };
+
+                const fetchDashboardStats = async () => { try { dashboardStats.value = await apiFetch('/api/admin/dashboard'); } catch (e) { errorMessage.value = e.message; } };
+                const fetchCourses = async () => { try { const r = await apiFetch('/api/admin/courses'); courses.value = r.courses || []; } catch (e) { errorMessage.value = e.message; } };
+                const fetchExaminations = async () => { try { const r = await apiFetch('/api/admin/examinations'); examinations.value = r.examinations || []; } catch (e) { errorMessage.value = e.message; } };
+                const fetchExaminers = async () => { try { const r = await apiFetch('/api/admin/examiners'); examiners.value = r.examiners || []; } catch (e) { errorMessage.value = e.message; } };
+                const fetchSlots = async () => { try { const r = await apiFetch('/api/admin/slots'); allSlots.value = r.slots || []; } catch (e) { errorMessage.value = e.message; } };
+                const fetchBookings = async () => { try { const r = await apiFetch('/api/admin/bookings'); allBookings.value = r.bookings || []; } catch (e) { errorMessage.value = e.message; } };
+                const fetchHistoricalReports = async () => { try { historicalReports.value = await apiFetch('/api/admin/reports/stats'); } catch (e) { errorMessage.value = e.message; } };
+
+                const openCourseForm = (c = null) => {
+                    editingCourseId.value = c ? c.id : null;
+                    courseForm.value = c ? { course_code: c.course_code, course_name: c.course_name, description: c.description || '', status: c.status } : { course_code: '', course_name: '', description: '', status: 'active' };
+                    showCourseForm.value = true;
+                };
+
+                const saveCourse = async () => {
+                    try {
+                        if (editingCourseId.value) await apiFetch('/api/admin/courses/' + editingCourseId.value, { method: 'PUT', body: JSON.stringify(courseForm.value) });
+                        else await apiFetch('/api/admin/courses', { method: 'POST', body: JSON.stringify(courseForm.value) });
+                        showCourseForm.value = false;
+                        fetchCourses();
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const deleteCourse = async (id) => {
+                    if (!confirm('Delete this course?')) return;
+                    try { await apiFetch('/api/admin/courses/' + id, { method: 'DELETE' }); fetchCourses(); } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const openExamForm = (e = null) => {
+                    editingExamId.value = e ? e.id : null;
+                    examForm.value = e ? {
+                        course_id: e.course_id,
+                        exam_name: e.exam_name,
+                        description: e.description || '',
+                        duration_minutes: e.duration_minutes,
+                        max_marks: e.max_marks,
+                        slot_creation_start_date: e.slot_creation_start_date ? e.slot_creation_start_date.substring(0, 16) : '',
+                        slot_creation_end_date: e.slot_creation_end_date ? e.slot_creation_end_date.substring(0, 16) : '',
+                        slot_booking_start_date: e.slot_booking_start_date ? e.slot_booking_start_date.substring(0, 16) : '',
+                        slot_booking_end_date: e.slot_booking_end_date ? e.slot_booking_end_date.substring(0, 16) : '',
+                        status: e.status
+                    } : {
+                        course_id: courses.value.length ? courses.value[0].id : '',
+                        exam_name: '',
+                        description: '',
+                        duration_minutes: 45,
+                        max_marks: 100,
+                        slot_creation_start_date: '',
+                        slot_creation_end_date: '',
+                        slot_booking_start_date: '',
+                        slot_booking_end_date: '',
+                        status: 'Draft'
+                    };
+                    showExamForm.value = true;
+                };
+
+                const saveExam = async () => {
+                    try {
+                        if (editingExamId.value) await apiFetch('/api/admin/examinations/' + editingExamId.value, { method: 'PUT', body: JSON.stringify(examForm.value) });
+                        else await apiFetch('/api/admin/examinations', { method: 'POST', body: JSON.stringify(examForm.value) });
+                        showExamForm.value = false;
+                        fetchExaminations();
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const deleteExam = async (id) => {
+                    if (!confirm('Delete this exam?')) return;
+                    try { await apiFetch('/api/admin/examinations/' + id, { method: 'DELETE' }); fetchExaminations(); } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const loadExamDetails = async (examId) => {
+                    try { const res = await apiFetch('/api/admin/examinations/' + examId); selectedExamForDetail.value = res.examination; } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const saveRubric = async () => {
+                    if (!selectedExamForDetail.value) return;
+                    try {
+                        await apiFetch('/api/admin/examinations/' + selectedExamForDetail.value.id + '/rubrics', { method: 'POST', body: JSON.stringify(rubricForm.value) });
+                        rubricForm.value = { criterion_name: '', max_marks: 20, description: '' };
+                        showRubricForm.value = false;
+                        loadExamDetails(selectedExamForDetail.value.id);
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const deleteRubric = async (rubricId) => {
+                    try { await apiFetch('/api/admin/rubrics/' + rubricId, { method: 'DELETE' }); loadExamDetails(selectedExamForDetail.value.id); } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const assignExaminerToSelectedExam = async () => {
+                    if (!selectedExamForDetail.value || !assignExaminerId.value) return;
+                    try {
+                        await apiFetch('/api/admin/examinations/' + selectedExamForDetail.value.id + '/assign', { method: 'POST', body: JSON.stringify({ examiner_id: assignExaminerId.value }) });
+                        assignExaminerId.value = '';
+                        loadExamDetails(selectedExamForDetail.value.id);
+                        fetchExaminations();
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const unassignExaminer = async (examinerId) => {
+                    if (!selectedExamForDetail.value) return;
+                    try {
+                        await apiFetch('/api/admin/examinations/' + selectedExamForDetail.value.id + '/unassign/' + examinerId, { method: 'DELETE' });
+                        loadExamDetails(selectedExamForDetail.value.id);
+                        fetchExaminations();
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const createExaminer = async () => {
+                    try {
+                        await apiFetch('/api/admin/examiners', { method: 'POST', body: JSON.stringify(examinerForm.value) });
+                        examinerForm.value = { full_name: '', email: '', password: '', department: '', contact_details: '' };
+                        showExaminerForm.value = false;
+                        fetchExaminers();
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const openRescheduleModal = async (booking) => {
+                    reschedulingBooking.value = booking;
+                    targetRescheduleSlotId.value = '';
+                    try {
+                        const res = await apiFetch('/api/admin/slots?exam_id=' + booking.exam_id);
+                        candidateSlots.value = (res.slots || []).filter(s => s.id !== booking.slot_id && s.available_seats > 0 && s.status !== 'Cancelled');
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const executeReschedule = async () => {
+                    if (!reschedulingBooking.value || !targetRescheduleSlotId.value) return;
+                    try {
+                        await apiFetch('/api/admin/bookings/' + reschedulingBooking.value.id + '/reschedule', {
+                            method: 'POST',
+                            body: JSON.stringify({ new_slot_id: targetRescheduleSlotId.value })
+                        });
+                        reschedulingBooking.value = null;
+                        fetchBookings();
+                        fetchSlots();
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                // Examiner Portal functions
+                const setExaminerTab = (tab) => {
+                    examinerTab.value = tab;
+                    errorMessage.value = '';
+                    successMessage.value = '';
+                    if (tab === 'dashboard') fetchExaminerDashboard();
+                    if (tab === 'assigned_exams') fetchExaminerExams();
+                    if (tab === 'my_slots') { fetchExaminerExams(); fetchExaminerSlots(); }
+                    if (tab === 'booked_students') fetchBookedStudents();
+                };
+
+                const fetchExaminerDashboard = async () => {
+                    try { examinerStats.value = await apiFetch('/api/examiner/dashboard'); } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const fetchExaminerExams = async () => {
+                    try { const res = await apiFetch('/api/examiner/examinations'); examinerExams.value = res.examinations || []; } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const fetchExaminerSlots = async () => {
+                    try { const res = await apiFetch('/api/examiner/slots'); examinerSlots.value = res.slots || []; } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const fetchBookedStudents = async () => {
+                    try { const res = await apiFetch('/api/examiner/booked-students'); bookedStudents.value = res.booked_students || []; } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const startSlotCreationForExam = (exam) => {
+                    slotForm.value.exam_id = exam.id;
+                    showSlotForm.value = true;
+                    setExaminerTab('my_slots');
+                };
+
+                const saveSlot = async () => {
+                    try {
+                        await apiFetch('/api/examiner/slots', {
+                            method: 'POST',
+                            body: JSON.stringify(slotForm.value)
+                        });
+                        successMessage.value = 'Examination slot created successfully.';
+                        showSlotForm.value = false;
+                        slotForm.value = { exam_id: '', exam_date: '', start_time: '', end_time: '', max_capacity: 5 };
+                        fetchExaminerSlots();
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const deleteExaminerSlot = async (slotId) => {
+                    if (!confirm('Are you sure you want to delete this slot?')) return;
+                    try {
+                        await apiFetch('/api/examiner/slots/' + slotId, { method: 'DELETE' });
+                        successMessage.value = 'Slot deleted.';
+                        fetchExaminerSlots();
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const markSlotCompleted = async (slotId) => {
+                    if (!confirm('Mark this slot as Completed? All evaluations must be finished.')) return;
+                    try {
+                        await apiFetch('/api/examiner/slots/' + slotId + '/complete', { method: 'POST' });
+                        successMessage.value = 'Slot marked as Completed.';
+                        fetchExaminerSlots();
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const openEvaluationForm = async (booking) => {
+                    try {
+                        const res = await apiFetch('/api/examiner/bookings/' + booking.booking_id + '/rubrics');
+                        evaluatingBooking.value = booking;
+                        evaluationRubrics.value = res.rubrics || [];
+                        evaluatingBookingExamMax.value = res.max_marks || 100;
+                        evaluationRemarks.value = res.existing_evaluation ? res.existing_evaluation.remarks : '';
+                        rubricScoreInputs.value = {};
+
+                        if (res.existing_evaluation && res.existing_evaluation.rubric_scores) {
+                            res.existing_evaluation.rubric_scores.forEach(s => {
+                                rubricScoreInputs.value[s.rubric_id] = s.marks_obtained;
+                            });
+                        } else {
+                            evaluationRubrics.value.forEach(r => {
+                                rubricScoreInputs.value[r.id] = 0;
+                            });
+                        }
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const submitStudentEvaluation = async () => {
+                    if (!evaluatingBooking.value) return;
+                    const scoresArray = [];
+                    for (const rid in rubricScoreInputs.value) {
+                        scoresArray.push({
+                            rubric_id: parseInt(rid),
+                            marks_obtained: parseFloat(rubricScoreInputs.value[rid]) || 0
+                        });
+                    }
+                    try {
+                        await apiFetch('/api/examiner/bookings/' + evaluatingBooking.value.booking_id + '/evaluate', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                rubric_scores: scoresArray,
+                                remarks: evaluationRemarks.value
+                            })
+                        });
+                        successMessage.value = 'Evaluation saved successfully for ' + evaluatingBooking.value.student_name;
+                        evaluatingBooking.value = null;
+                        fetchBookedStudents();
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                // Student Portal functions
+                const setStudentTab = (tab) => {
+                    studentTab.value = tab;
+                    errorMessage.value = '';
+                    successMessage.value = '';
+                    if (tab === 'dashboard') fetchStudentDashboard();
+                    if (tab === 'examinations') searchStudentExaminations();
+                    if (tab === 'bookings') fetchStudentBookings();
+                    if (tab === 'results') fetchStudentResults();
+                    if (tab === 'profile') fetchStudentProfile();
+                };
+
+                const fetchStudentDashboard = async () => {
+                    try {
+                        studentDashboard.value = await apiFetch('/api/student/dashboard');
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const searchStudentExaminations = async () => {
+                    try {
+                        const search = encodeURIComponent(studentExamSearch.value.trim());
+                        const response = await apiFetch('/api/student/examinations?search=' + search);
+                        studentExaminations.value = response.examinations || [];
+                        studentSlotDetails.value = null;
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const showStudentSlots = async (exam) => {
+                    try {
+                        studentSlotDetails.value = await apiFetch('/api/student/examinations/' + exam.id + '/slots');
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const bookStudentSlot = async (slot) => {
+                    try {
+                        const response = await apiFetch('/api/student/book', {
+                            method: 'POST',
+                            body: JSON.stringify({ slot_id: slot.id })
+                        });
+                        successMessage.value = response.message || 'Slot booked successfully.';
+                        studentSlotDetails.value = await apiFetch('/api/student/examinations/' + slot.exam_id + '/slots');
+                        await fetchStudentBookings();
+                        await fetchStudentDashboard();
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const fetchStudentBookings = async () => {
+                    try {
+                        const response = await apiFetch('/api/student/bookings');
+                        studentBookings.value = response.bookings || [];
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const cancelStudentBooking = async (booking) => {
+                    try {
+                        const response = await apiFetch('/api/student/bookings/' + booking.id + '/cancel', { method: 'POST' });
+                        successMessage.value = response.message || 'Booking cancelled successfully.';
+                        await fetchStudentBookings();
+                        await fetchStudentDashboard();
+                        if (studentSlotDetails.value) {
+                            studentSlotDetails.value = await apiFetch('/api/student/examinations/' + booking.exam_id + '/slots');
+                        }
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const fetchStudentResults = async () => {
+                    try {
+                        const response = await apiFetch('/api/student/results');
+                        studentResults.value = response.results || [];
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const fetchStudentProfile = async () => {
+                    try {
+                        const response = await apiFetch('/api/student/profile');
+                        studentProfile.value = response.profile;
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const saveStudentProfile = async () => {
+                    try {
+                        const response = await apiFetch('/api/student/profile', {
+                            method: 'PUT',
+                            body: JSON.stringify({ full_name: studentProfile.value.full_name })
+                        });
+                        studentProfile.value = response.profile;
+                        currentUser.value = response.profile;
+                        successMessage.value = response.message || 'Profile changes saved.';
+                    } catch (e) { errorMessage.value = e.message; }
+                };
+
+                const startCsvExport = async () => {
+                    try {
+                        exportLoading.value = true;
+                        exportStatus.value = 'started';
+                        exportError.value = '';
+                        exportTaskId.value = '';
+
+                        const res = await apiFetch('/api/student/export', { method: 'POST' });
+                        exportTaskId.value = res.task_id;
+                        exportStatus.value = 'processing';
+
+                        // Poll task status every 1.5 seconds
+                        const pollInterval = setInterval(async () => {
+                            try {
+                                const statusRes = await apiFetch('/api/student/export/status/' + exportTaskId.value);
+                                if (statusRes.status === 'SUCCESS') {
+                                    clearInterval(pollInterval);
+                                    exportStatus.value = 'completed';
+                                    exportLoading.value = false;
+                                } else if (statusRes.status === 'FAILURE') {
+                                    clearInterval(pollInterval);
+                                    exportStatus.value = 'failed';
+                                    exportLoading.value = false;
+                                    exportError.value = statusRes.error || 'Export task failed on server.';
+                                } else {
+                                    exportStatus.value = 'processing';
+                                }
+                            } catch (err) {
+                                clearInterval(pollInterval);
+                                exportStatus.value = 'failed';
+                                exportLoading.value = false;
+                                exportError.value = err.message || 'Status check failed.';
+                            }
+                        }, 1500);
+                    } catch (e) {
+                        exportStatus.value = 'failed';
+                        exportLoading.value = false;
+                        exportError.value = e.message || 'Could not initiate export.';
+                    }
+                };
+
+                onMounted(() => {
+                    checkSession();
+                });
+
+                return {
+                    currentView,
+                    currentUser,
+                    csrfToken,
+                    loading,
+                    errorMessage,
+                    successMessage,
+                    loginForm,
+                    registerForm,
+                    adminTab,
+                    dashboardStats,
+                    courses,
+                    examinations,
+                    examiners,
+                    allSlots,
+                    allBookings,
+                    historicalReports,
+                    showCourseForm,
+                    editingCourseId,
+                    courseForm,
+                    showExamForm,
+                    editingExamId,
+                    examForm,
+                    selectedExamForDetail,
+                    showRubricForm,
+                    rubricForm,
+                    assignExaminerId,
+                    showExaminerForm,
+                    examinerForm,
+                    reschedulingBooking,
+                    candidateSlots,
+                    targetRescheduleSlotId,
+                    examinerTab,
+                    examinerStats,
+                    examinerExams,
+                    examinerSlots,
+                    bookedStudents,
+                    showSlotForm,
+                    slotForm,
+                    evaluatingBooking,
+                    evaluationRubrics,
+                    rubricScoreInputs,
+                    evaluationRemarks,
+                    evaluatingBookingExamMax,
+                    calculatedTotalScore,
+                    studentTab,
+                    studentDashboard,
+                    studentExamSearch,
+                    studentExaminations,
+                    studentSlotDetails,
+                    studentBookings,
+                    studentResults,
+                    studentProfile,
+                    setView,
+                    resetView,
+                    setAdminTab,
+                    formatDateTime,
+                    handleLogin,
+                    handleRegister,
+                    handleLogout,
+                    openCourseForm,
+                    saveCourse,
+                    deleteCourse,
+                    openExamForm,
+                    saveExam,
+                    deleteExam,
+                    loadExamDetails,
+                    saveRubric,
+                    deleteRubric,
+                    assignExaminerToSelectedExam,
+                    unassignExaminer,
+                    createExaminer,
+                    fetchSlots,
+                    fetchBookings,
+                    openRescheduleModal,
+                    executeReschedule,
+                    setExaminerTab,
+                    startSlotCreationForExam,
+                    saveSlot,
+                    deleteExaminerSlot,
+                    markSlotCompleted,
+                    openEvaluationForm,
+                    submitStudentEvaluation,
+                    setStudentTab,
+                    searchStudentExaminations,
+                    showStudentSlots,
+                    bookStudentSlot,
+                    cancelStudentBooking,
+                    saveStudentProfile,
+                    exportLoading,
+                    exportStatus,
+                    exportTaskId,
+                    exportError,
+                    startCsvExport
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
